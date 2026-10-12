@@ -2,7 +2,6 @@ import os
 import io
 import numpy as np
 import requests
-from flask import Flask, request, jsonify
 from PIL import Image
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -12,12 +11,12 @@ import tensorflow as tf
 from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input, decode_predictions
 from tensorflow.keras.utils import load_img, img_to_array
 
-app = Flask(__name__)
+
 
 # Load the AI model
 print("🧠 Loading AI model...")
 model = ResNet50(weights='imagenet')
-print("✅ AI model loaded successfully!")
+print("✅ AI model loaded successfully!") 
 
 # Get bot token from environment variable
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -41,7 +40,7 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Get the largest photo size
             file_id = update.message.photo[-1].file_id
-            file = await context.bot.get_file(file_id)
+            file = await context.bot.get_file(file_id) #what is context.bot (is it telegram module's function)
             
             if not file.file_path:
                 await update.message.reply_text("❌ Sorry, couldn't access the image file.")
@@ -49,8 +48,8 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Download and process the image
             print(f"📥 Downloading image: {file.file_path}")
-            img_data = requests.get(file.file_path).content
-            img = Image.open(io.BytesIO(img_data))
+            img_data = requests.get(file.file_path).content 
+            img = Image.open(io.BytesIO(img_data))  #doubt
             
             # Get image properties
             width, height = img.size
@@ -64,14 +63,13 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Convert to array and preprocess for ResNet50
             x = img_to_array(img_resized)
-            x = np.expand_dims(x, axis=0)
-            x = preprocess_input(x)
+            x = np.expand_dims(x, axis=0)  #doubt #what's a batch dimension ? 
+            x = preprocess_input(x)  #doubt
             
             # Make prediction
             print("🤖 Running AI classification...")
-            preds = model.predict(x, verbose=0)
+            preds = model.predict(x, verbose=0)  #doubt verbose 
             decoded_preds = decode_predictions(preds, top=5)[0]
-            
             # Format response
             response = f"📸 **Image Analysis Results**\n\n"
             response += f"**📏 Image Properties:**\n"
@@ -84,7 +82,7 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for i, (imagenet_id, label, score) in enumerate(decoded_preds):
                 confidence = f"{score * 100:.1f}%"
                 emoji = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "📍"
-                response += f"{emoji} {label.replace('_', ' ').title()}: {confidence}\n"
+                response += f"{emoji} {label.replace('_', ' ').title()}: {confidence}\n" #doubt
             
             response += f"\n✨ **Best guess:** {decoded_preds[0][1].replace('_', ' ').title()}"
             
