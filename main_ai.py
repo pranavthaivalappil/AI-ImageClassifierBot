@@ -1,3 +1,4 @@
+import PIL
 import os
 import io
 import numpy as np
@@ -7,9 +8,9 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # TensorFlow imports (these will work in Python 3.12 environment)
-import tensorflow as tf
-from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input, decode_predictions
-from tensorflow.keras.utils import load_img, img_to_array
+
+from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input, decode_predictions  # type: ignore[import]
+from tensorflow.keras.utils import img_to_array  # type: ignore[import]
 
 
 
@@ -48,7 +49,7 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Download and process the image
             print(f"📥 Downloading image: {file.file_path}")
-            img_data = requests.get(file.file_path).content 
+            img_data = requests.get(file.file_path,timeout=(5,10)).content 
             img = Image.open(io.BytesIO(img_data))  #doubt
             
             # Get image properties
@@ -70,6 +71,12 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print("🤖 Running AI classification...")
             preds = model.predict(x, verbose=0)  #doubt verbose 
             decoded_preds = decode_predictions(preds, top=5)[0]
+            
+            result = {
+                "label": decoded_preds[0][1],
+                "confidence": float(decoded_preds[0][2])
+    
+            }
             # Format response
             response = f"📸 **Image Analysis Results**\n\n"
             response += f"**📏 Image Properties:**\n"
@@ -84,16 +91,27 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 emoji = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "📍"
                 response += f"{emoji} {label.replace('_', ' ').title()}: {confidence}\n" #doubt
             
-            response += f"\n✨ **Best guess:** {decoded_preds[0][1].replace('_', ' ').title()}"
+            response += f"\n✨ **Best guess:** {result['label'].replace('_', ' ').title()}"
             
             # Edit the processing message with results
             await processing_msg.edit_text(response, parse_mode='Markdown')
             
-            print(f"✅ Classification complete: {decoded_preds[0][1]}")
+            print(f"✅ Classification complete: {result['label']}")
             
+        except requests.exceptions.Timeout:
+            print(f"Couldn't download your image — Telegram took too long.")
+            await update.message.reply_text(f"❌ Sorry, Couldn't download your image telegram took too long")
+        except requests.exceptions.RequestException:
+            print(f"Couldn't download your image — network error.")
+            await update.message.reply_text(f"❌ Sorry, there was an network error:")
+        except PIL.UnidentifiedImageError:
+            print(f"Couldn't read the image-it may be corrupted")
+            await update.message.reply_text(f"❌ Sorry, couldn't read the image it must be corrupted")
         except Exception as e:
-            print(f"❌ Error processing image: {str(e)}")
-            await update.message.reply_text(f"❌ Sorry, there was an error processing your image: {str(e)}")
+            print(f"Unexpected error: {e}" )
+            await update.message.reply_text(f"❌ Sorry, there was an error processing your image:")
+
+
     else:
         await update.message.reply_text('📷 Please send a photo for AI analysis!')
 
