@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+from telegram.request import HTTPXRequest
 import PIL
 import os
 import io
@@ -26,8 +29,31 @@ if not BOT_TOKEN:
     print("Please run: set_token.bat YOUR_BOT_TOKEN")
     exit(1)
 
+    # Configure custom HTTP request timeouts
+    request = HTTPXRequest(
+        connect_timeout=20.0,
+        read_timeout=20.0,
+        write_timeout=20.0
+    )
+
+    # Create application with the custom request configuration
+    application = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .request(request)
+        .build()
+    )
+    ...
+    # Allow retries if the initial connection experiences latency
+    application.run_polling(bootstrap_retries=5)
+
+
 # Type assertion for the linter
 assert BOT_TOKEN is not None
+
+# Confidence thresholds
+CONFIDENCE_HIGH_THRESHOLD = 0.60
+CONFIDENCE_LOW_THRESHOLD = 0.30
 
 async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle AI image classification requests"""
@@ -89,9 +115,19 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for i, (imagenet_id, label, score) in enumerate(decoded_preds):
                 confidence = f"{score * 100:.1f}%"
                 emoji = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "📍"
-                response += f"{emoji} {label.replace('_', ' ').title()}: {confidence}\n" #doubt
+                response += f"{emoji} {label.replace('_', ' ').title()}: {confidence}\n"
+
+            top_label = result['label'].replace('_',' ').title()
+            top_conf = result["confidence"]
             
-            response += f"\n✨ **Best guess:** {result['label'].replace('_', ' ').title()}"
+            # response += f"\n✨ **Best guess:** {result['label'].replace('_', ' ').title()}"
+            if top_conf >= CONFIDENCE_HIGH_THRESHOLD:
+                response += f"\n🎯 High confidence: {top_label} ({top_conf * 100:.1f}%)"
+            elif top_conf >= CONFIDENCE_LOW_THRESHOLD:
+                response += f"\n🤔 Moderate confidence: It looks like {top_label} ({top_conf * 100:.1f}%), but check the other guesses above."
+            else:
+                response += f"\n⚠️ Low confidence ({top_conf * 100:.1f}%): I'm not very sure about this image. Try sending a clearer or more centered photo!"
+
             
             # Edit the processing message with results
             await processing_msg.edit_text(response, parse_mode='Markdown')
