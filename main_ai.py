@@ -1,59 +1,10 @@
-from dotenv import load_dotenv
-load_dotenv()
+from config import BOT_TOKEN,CONFIDENCE_HIGH_THRESHOLD,CONFIDENCE_LOW_THRESHOLD
 from telegram.request import HTTPXRequest
-import PIL
-import os
-import io
-import numpy as np
-import requests
-from PIL import Image
+from classifier import classify_image_bytes
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-
-# TensorFlow imports (these will work in Python 3.12 environment)
-
-from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input, decode_predictions  # type: ignore[import]
-from tensorflow.keras.utils import img_to_array  # type: ignore[import]
-
-
-
-# Load the AI model
-print("🧠 Loading AI model...")
-model = ResNet50(weights='imagenet')
-print("✅ AI model loaded successfully!") 
-
-# Get bot token from environment variable
-BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-if not BOT_TOKEN:
-    print("❌ Error: TELEGRAM_BOT_TOKEN not found in environment variables!")
-    print("Please run: set_token.bat YOUR_BOT_TOKEN")
-    exit(1)
-
-    # Configure custom HTTP request timeouts
-    request = HTTPXRequest(
-        connect_timeout=20.0,
-        read_timeout=20.0,
-        write_timeout=20.0
-    )
-
-    # Create application with the custom request configuration
-    application = (
-        Application.builder()
-        .token(BOT_TOKEN)
-        .request(request)
-        .build()
-    )
-    ...
-    # Allow retries if the initial connection experiences latency
-    application.run_polling(bootstrap_retries=5)
-
-
-# Type assertion for the linter
-assert BOT_TOKEN is not None
-
-# Confidence thresholds
-CONFIDENCE_HIGH_THRESHOLD = 0.60
-CONFIDENCE_LOW_THRESHOLD = 0.30
+import requests
+from PIL import UnidentifiedImageError
 
 async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle AI image classification requests"""
@@ -76,39 +27,23 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Download and process the image
             print(f"📥 Downloading image: {file.file_path}")
             img_data = requests.get(file.file_path,timeout=(5,10)).content 
-            img = Image.open(io.BytesIO(img_data))  #doubt
+            properties,decoded_preds,result = classify_image_bytes(img_data)
             
             # Get image properties
-            width, height = img.size
-            format_name = img.format or "Unknown"
-            mode = img.mode
+            width = properties["width"]
+            height = properties["height"]
+            format_name = properties["format"]
+            size = properties["size_kb"]
+            mode = properties["mode"]
             
-            # Prepare image for AI classification
-            img_resized = img.resize((224, 224))
-            if img_resized.mode != 'RGB':
-                img_resized = img_resized.convert('RGB')
             
-            # Convert to array and preprocess for ResNet50
-            x = img_to_array(img_resized)
-            x = np.expand_dims(x, axis=0)  #doubt #what's a batch dimension ? 
-            x = preprocess_input(x)  #doubt
-            
-            # Make prediction
-            print("🤖 Running AI classification...")
-            preds = model.predict(x, verbose=0)  #doubt verbose 
-            decoded_preds = decode_predictions(preds, top=5)[0]
-            
-            result = {
-                "label": decoded_preds[0][1],
-                "confidence": float(decoded_preds[0][2])
-    
-            }
+
             # Format response
             response = f"📸 **Image Analysis Results**\n\n"
             response += f"**📏 Image Properties:**\n"
             response += f"• Size: {width}×{height} pixels\n"
             response += f"• Format: {format_name}\n"
-            response += f"• File size: {len(img_data) // 1024} KB\n"
+            response += f"• File size: {size} KB\n"
             response += f"• Color mode: {mode}\n\n"
             
             response += f"🤖 **AI Classification (Top 5):**\n"
@@ -140,7 +75,7 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except requests.exceptions.RequestException:
             print(f"Couldn't download your image — network error.")
             await update.message.reply_text(f"❌ Sorry, there was an network error:")
-        except PIL.UnidentifiedImageError:
+        except UnidentifiedImageError:
             print(f"Couldn't read the image-it may be corrupted")
             await update.message.reply_text(f"❌ Sorry, couldn't read the image it must be corrupted")
         except Exception as e:
@@ -190,12 +125,19 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Start the bot"""
+    # Configure custom HTTP request timeouts
+    request = HTTPXRequest(
+        connect_timeout=20.0,
+        read_timeout=20.0,
+        write_timeout=20.0
+    )
+    
     # Ensure token is available (this will never be None due to earlier exit)
     if not BOT_TOKEN:
         return
     
     # Create application  
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = Application.builder().token(BOT_TOKEN).request(request).build()
     
     # Add handlers
     application.add_handler(CommandHandler("start", start_command))
@@ -209,7 +151,7 @@ def main():
     print("🛑 Press Ctrl+C to stop")
     print("-" * 50)
     
-    application.run_polling()
+    application.run_polling(bootstrap_retries=5)
 
 if __name__ == '__main__':
     main() 
