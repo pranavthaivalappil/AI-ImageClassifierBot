@@ -3,10 +3,14 @@ import numpy as np
 from PIL import Image
 from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input, decode_predictions  # type: ignore[import]
 from tensorflow.keras.utils import img_to_array  # type: ignore[import]
+import logging
+logger = logging.getLogger(__name__)
+from config import MAX_IMAGE_DIMENSION
 
-print("🧠 Loading AI model...")
+
+logger.info("🧠 Loading AI model...")
 model = ResNet50(weights='imagenet')
-print("✅ AI model loaded successfully!")
+logger.info("✅ AI model loaded successfully!")
 
 def classify_image_bytes(img_data: bytes):
     """
@@ -15,6 +19,8 @@ def classify_image_bytes(img_data: bytes):
     """
     # 1. Open image from bytes
     img = Image.open(io.BytesIO(img_data))
+    if img.width > MAX_IMAGE_DIMENSION or img.height > MAX_IMAGE_DIMENSION:
+        raise ValueError(f"Image dimensions ({img.width} * {img.height}) exceed maximum allowed ({MAX_IMAGE_DIMENSION} * {MAX_IMAGE_DIMENSION})")
     
     # 2. Extract properties
     properties = {

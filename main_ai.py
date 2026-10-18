@@ -1,10 +1,19 @@
-from config import BOT_TOKEN,CONFIDENCE_HIGH_THRESHOLD,CONFIDENCE_LOW_THRESHOLD
+import logging
+logger = logging.getLogger(__name__)
 from telegram.request import HTTPXRequest
 from classifier import classify_image_bytes
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import requests
 from PIL import UnidentifiedImageError
+from config import (
+    BOT_TOKEN, 
+    CONFIDENCE_HIGH_THRESHOLD, 
+    CONFIDENCE_LOW_THRESHOLD, 
+    MAX_FILE_SIZE_BYTES
+)
+
+
 
 async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle AI image classification requests"""
@@ -18,14 +27,20 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Get the largest photo size
             file_id = update.message.photo[-1].file_id
-            file = await context.bot.get_file(file_id) 
+            file = await context.bot.get_file(file_id)
+
+            if file.file_size and file.file_size > MAX_FILE_SIZE_BYTES:
+                logger.warning(f"Image rejected: file size {file.file_size} exceeds the limit ")
+                await update.message.reply_text("Image is too large! Please send an image under 10MB.")
+                return
+            
             
             if not file.file_path:
                 await update.message.reply_text("❌ Sorry, couldn't access the image file.")
                 return
             
             # Download and process the image
-            print(f"📥 Downloading image: {file.file_path}")
+            logger.info("📥 Downloading image: %s", file.file_path)
             img_data = requests.get(file.file_path,timeout=(5,10)).content 
             properties,decoded_preds,result = classify_image_bytes(img_data)
             
@@ -67,19 +82,22 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Edit the processing message with results
             await processing_msg.edit_text(response, parse_mode='Markdown')
             
-            print(f"✅ Classification complete: {result['label']}")
+            logger.info(f"✅ Classification complete: {result['label']}")
             
         except requests.exceptions.Timeout:
-            print(f"Couldn't download your image — Telegram took too long.")
+            logger.warning(f"Couldn't download your image — Telegram took too long.")
             await update.message.reply_text(f"❌ Sorry, Couldn't download your image telegram took too long")
         except requests.exceptions.RequestException:
-            print(f"Couldn't download your image — network error.")
+            logger.warning(f"Couldn't download your image — network error.")
             await update.message.reply_text(f"❌ Sorry, there was an network error:")
         except UnidentifiedImageError:
-            print(f"Couldn't read the image-it may be corrupted")
+            logger.warning(f"Couldn't read the image-it may be corrupted")
             await update.message.reply_text(f"❌ Sorry, couldn't read the image it must be corrupted")
+        except ValueError as e:
+            logger.warning("Validation error: %s",e)
+            await update.message.reply_text(f"❌ Invalid image: {str(e)}")
         except Exception as e:
-            print(f"Unexpected error: {e}" )
+            logger.error(f"Unexpected error: {e}",exc_info=True )
             await update.message.reply_text(f"❌ Sorry, there was an error processing your image:")
 
 
