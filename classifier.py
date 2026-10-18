@@ -38,9 +38,9 @@ def classify_image_bytes(img_data: bytes):
     preds = model.predict(x, verbose=0)
     decoded_preds = decode_predictions(preds, top=5)[0]
     
-    top_result = {
+    result = {
         "label": decoded_preds[0][1],
         "confidence": float(decoded_preds[0][2])
     }
     
-    return properties, decoded_preds, top_result
+    return properties, decoded_preds, result

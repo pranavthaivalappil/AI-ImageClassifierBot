@@ -18,7 +18,7 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Get the largest photo size
             file_id = update.message.photo[-1].file_id
-            file = await context.bot.get_file(file_id) #what is context.bot (is it telegram module's function)
+            file = await context.bot.get_file(file_id) 
             
             if not file.file_path:
                 await update.message.reply_text("❌ Sorry, couldn't access the image file.")
