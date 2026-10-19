@@ -1,10 +1,10 @@
+import asyncio
 import logging
 logger = logging.getLogger(__name__)
 from telegram.request import HTTPXRequest
 from classifier import classify_image_bytes
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import requests
 from PIL import UnidentifiedImageError
 from config import (
     BOT_TOKEN, 
@@ -12,7 +12,7 @@ from config import (
     CONFIDENCE_LOW_THRESHOLD, 
     MAX_FILE_SIZE_BYTES
 )
-
+import httpx
 
 
 async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -41,8 +41,14 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Download and process the image
             logger.info("📥 Downloading image: %s", file.file_path)
-            img_data = requests.get(file.file_path,timeout=(5,10)).content 
-            properties,decoded_preds,result = classify_image_bytes(img_data)
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(file.file_path)
+                response.raise_for_status()
+                img_data = response.content 
+            properties,decoded_preds,result = await asyncio.to_thread(
+                classify_image_bytes,
+                img_data
+            )
             
             # Get image properties
             width = properties["width"]
@@ -83,13 +89,13 @@ async def classify_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await processing_msg.edit_text(response, parse_mode='Markdown')
             
             logger.info(f"✅ Classification complete: {result['label']}")
-            
-        except requests.exceptions.Timeout:
-            logger.warning(f"Couldn't download your image — Telegram took too long.")
-            await update.message.reply_text(f"❌ Sorry, Couldn't download your image telegram took too long")
-        except requests.exceptions.RequestException:
-            logger.warning(f"Couldn't download your image — network error.")
-            await update.message.reply_text(f"❌ Sorry, there was an network error:")
+
+        except httpx.TimeoutException:
+            logger.warning("Timeout downloading image from Telegram CDN")
+            await update.message.reply_text("Sorry,couldn't download your image - Telegram took too long")
+        except httpx.HTTPError as e:
+            logger.warning(f"Http error downloading the image {e}")
+            await update.message.reply_text("❌  Sorry,there was a network error downloading your image")
         except UnidentifiedImageError:
             logger.warning(f"Couldn't read the image-it may be corrupted")
             await update.message.reply_text(f"❌ Sorry, couldn't read the image it must be corrupted")
