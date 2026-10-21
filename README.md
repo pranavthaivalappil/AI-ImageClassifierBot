@@ -1,105 +1,211 @@
-# 🤖 AI Telegram Image Classifier Bot
+# 🤖 AI Image Intelligence — Telegram Bot & REST API
 
-A powerful Telegram bot that uses AI (ResNet50 neural network) to classify and analyze images sent by users.
+An asynchronous, production-ready computer vision service powered by deep learning (**ResNet-50**). 
 
-## 📸 Demo
-
-![Bot Demo](images/image.png)
-*AI classifying a photo with confidence scores*
-
-<!-- ![Bot Setup](images/bot-startup.png)
-*Bot successfully starting with TensorFlow loaded* -->
-
-## 🚀 Quick Start Guide
-
-### Step 1: Get a Telegram Bot Token
-1. Open Telegram and search for `@BotFather`
-2. Start a chat with BotFather
-3. Send `/newbot`
-4. Choose a name for your bot (e.g., "My Image Classifier Bot")
-5. Choose a username ending with 'bot' (e.g., "myimageclassifier_bot")
-6. **Copy the token** BotFather gives you (format: `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
-
-### Step 2: Install Python 3.12
-1. **Download Python 3.12** from: https://www.python.org/downloads/release/python-31212/
-2. Download "Windows installer (64-bit)" (`python-3.12.12-amd64.exe`)
-3. **Important**: Check "Add Python to PATH" during installation
-4. Choose "Install for all users" if prompted
-
-### Step 3: Set Up the Environment
-1. **Double-click** `setup_python312.bat`
-2. Wait for the setup to complete (this will install TensorFlow and all dependencies)
-
-### Step 4: Configure Your Bot Token
-1. **Run**: `set_token.bat YOUR_BOT_TOKEN_HERE`
-   - Example: `set_token.bat 123456789:ABCdefGHIjklMNOpqrsTUVwxyz`
-
-### Step 5: Start Your Bot
-1. **Double-click** `run_bot.bat`
-2. Wait for "✅ Bot ready!" message
-3. **Test it**: Send a photo to your bot on Telegram!
-
-## 📱 How to Use
-
-1. **Find your bot** on Telegram using the username you created
-2. **Send `/start`** to see the welcome message
-3. **Send any photo** and get AI analysis in seconds!
-4. **Commands available**:
-   - `/start` - Welcome message
-   - `/help` - Usage instructions
-
-## 🔧 Features
-
-- 🧠 **AI-Powered**: Uses ResNet50 neural network trained on ImageNet
-- 🎯 **Accurate**: Recognizes 1000+ different object categories  
-- ⚡ **Fast**: Analysis usually takes 2-5 seconds
-- 📊 **Detailed**: Shows top 5 predictions with confidence scores
-- 📏 **Image Info**: Displays file size, dimensions, and format
-- 🛡️ **Secure**: Token stored in environment variables
-
-## 📁 File Structure
-
-```
-├── main.py              # Basic version (Python 3.13 compatible)
-├── main_ai.py           # Full AI version (needs Python 3.12)
-├── setup_python312.bat  # Automated setup script
-├── set_token.bat        # Token configuration script  
-├── run_bot.bat          # Bot launcher script
-├── requirements.txt     # Dependencies list
-└── README.md           # This file
-```
-
-## 🐛 Troubleshooting
-
-### "Python 3.12 not found"
-- Make sure you installed Python 3.12 and checked "Add to PATH"
-- Restart your computer after installation
-
-### "Virtual environment not found"
-- Run `setup_python312.bat` first
-- Make sure it completed without errors
-
-### "Bot token not found"
-- Run `set_token.bat YOUR_TOKEN` with your actual token
-- Check that a `.env` file was created
-
-### Bot doesn't respond
-- Check that the bot token is correct
-- Make sure you started a chat with your bot first
-- Verify the bot is running (should show "✅ Bot ready!")
-
-## 🔒 Security Notes
-
-- Your bot token is stored in `.env` file (don't share this file!)
-- For production use, consider additional security measures
-- The bot only processes images you send to it
-
-## 🆘 Support
-
-If you encounter issues:
-1. Check the troubleshooting section above
-2. Make sure all steps were followed in order
-3. Verify Python 3.12 is properly installed
+This project provides dual interfaces—an interactive **Telegram Bot** and a high-performance **FastAPI REST API**—built on a decoupled, non-blocking inference engine designed to handle concurrent requests efficiently.
 
 ---
-**Enjoy your AI-powered Telegram bot! 🎉** 
+
+##  Demo & Interfaces
+
+### 1. Telegram Bot in Action
+Users can interact directly with the bot on Telegram to receive instant AI classifications with top-5 confidence breakdowns:
+
+![Bot Demo](images/image.png)
+*AI analyzing an image and reporting predictions with confidence tiers*
+
+### 2. Interactive Swagger API Docs
+The REST API automatically exposes interactive OpenAPI documentation accessible via your browser at `http://localhost:8000/docs`:
+
+- `POST /classify` — Upload raw image multipart/form-data for real-time classification.
+- `GET /health` — Health check endpoint for uptime and container orchestration.
+
+---
+
+##  System Architecture
+
+The project employs a modular, shared-core architecture. Both delivery channels (Telegram Long Polling & FastAPI HTTP endpoints) decouple network I/O from heavy CPU tensor operations:
+
+```
+                            ┌────────────────────────┐
+                            │      Client Request    │
+                            └─────┬────────────┬─────┘
+                                  │            │
+             Telegram Image Upload│            │ HTTP POST /classify
+                                  ▼            ▼
+                         ┌─────────────┐  ┌─────────────┐
+                         │ Telegram Bot│  │ FastAPI App │
+                         │(main_ai.py) │  │  (api.py)   │
+                         └──────┬──────┘  └──────┬──────┘
+                                │                │
+               Network Validation│                │ MIME & Size Guards
+                                ▼                ▼
+                         ┌──────────────────────────────┐
+                         │      asyncio.to_thread()     │  <-- Offloads CPU inference
+                         └──────────────┬───────────────┘
+                                        ▼
+                         ┌──────────────────────────────┐
+                         │    Shared Classifier Core    │
+                         │       (classifier.py)        │
+                         │  - In-Memory Byte Stream     │
+                         │  - Pillow / NumPy Pipeline   │
+                         │  - ResNet-50 Inference       │
+                         │  - Confidence Scoring        │
+                         └──────────────────────────────┘
+```
+
+---
+
+##  Key Engineering Highlights
+
+### 1. Non-Blocking Concurrency (`asyncio.to_thread`)
+Deep learning inference with TensorFlow and image resizing with Pillow are CPU-bound and synchronous. If executed directly inside an asynchronous handler, they would freeze Python's single-threaded event loop, blocking all other incoming messages. 
+
+We offload inference into a background thread pool via `await asyncio.to_thread(...)`, keeping the event loop responsive to concurrent traffic.
+
+### 2. Zero-Disk In-Memory Processing
+Downloaded images and API uploads are handled entirely in RAM using byte streams (`io.BytesIO`). Eliminating temporary disk writes:
+- Minimizes disk I/O latency.
+- Removes disk cleanup overhead and dangling file leaks.
+- Enhances data privacy and security.
+
+### 3. Defensive Engineering & DoS Protection
+To safeguard system resources against malformed inputs and malicious payloads:
+- **Pre-flight File Size Limits**: Enforces a strict 10MB limit (`MAX_FILE_SIZE_BYTES`) before downloading or processing full payloads.
+- **Decompression Bomb Guard**: Validates image dimensions against a 4096px threshold (`MAX_IMAGE_DIMENSION`) to prevent memory exhaustion attacks.
+- **MIME & Corrupt File Validation**: Traps unidentifiable or corrupt files via `PIL.UnidentifiedImageError` with clean user-facing error messages.
+
+### 4. Model Uncertainty & Tiered Confidence
+Neural networks apply softmax normalization, forcing predictions to sum to 100% even on nonsensical or out-of-distribution inputs. We implement threshold-based confidence tiering:
+- **$\ge 60\%$ (High)**: Clear, primary identification.
+- **$30\% - 60\%$ (Moderate)**: Prompts the user to review the top 5 alternative guesses.
+- **$< 30\%$ (Low)**: Warns the user of low certainty and requests a clearer photo.
+
+---
+
+##  Project Structure
+
+```
+AI-ImageClassifierBot/
+├── classifier.py         # Modular AI inference engine (ResNet-50, Pillow pipeline)
+├── config.py             # Centralized settings, thresholds, and environment loader
+├── main_ai.py            # Asynchronous Telegram bot delivery layer (Polling)
+├── api.py                # FastAPI REST API with Swagger docs and validation
+├── requirements.txt      # Production dependencies
+├── LEARNING_JOURNAL.md   # Architectural decisions, changelog, and interview notes
+├── images/               # Demo assets and screenshots
+├── run_bot.bat           # Windows bot launcher
+├── setup_python312.bat   # Automated Python 3.12 environment setup script
+└── set_token.bat         # Secure token configuration script
+```
+
+---
+
+##  Quick Start Guide
+
+### Prerequisites
+- **Python 3.12** (TensorFlow 2.18 requires Python 3.9–3.12 on Windows)
+- A Telegram Bot Token from [@BotFather](https://t.me/botfather) (if running the Telegram bot)
+
+### 1. Installation
+
+Clone the repository and set up a virtual environment:
+
+```bash
+git clone https://github.com/your-username/AI-Classifier-Bot.git
+cd AI-Classifier-Bot/AI-ImageClassifierBot
+
+# Create and activate virtual environment
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# Linux/macOS:
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+*(On Windows, you can alternatively double-click `setup_python312.bat` for automated setup).*
+
+### 2. Configure Environment
+
+Create a `.env` file in the project root:
+
+```env
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+```
+
+*(Or run `set_token.bat your_token_here` on Windows).*
+
+---
+
+##  Running the Services
+
+### Option A: Launch the Telegram Bot
+```bash
+python main_ai.py
+```
+*(Or double-click `run_bot.bat`).*
+
+Open Telegram, search for your bot username, send `/start`, and upload any image!
+
+### Option B: Launch the FastAPI REST Server
+```bash
+uvicorn api:app --reload --host 127.0.0.1 --port 8000
+```
+
+- **Interactive Swagger UI**: Visit [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- **Health Check**:
+  ```bash
+  curl http://127.0.0.1:8000/health
+  ```
+- **Classify an Image via cURL**:
+  ```bash
+  curl -X POST "http://127.0.0.1:8000/classify" \
+       -H "accept: application/json" \
+       -H "Content-Type: multipart/form-data" \
+       -F "file=@your_photo.jpg"
+  ```
+
+#### Sample API Response:
+```json
+{
+  "properties": {
+    "format": "JPEG",
+    "size_kb": 128.4,
+    "width": 1024,
+    "height": 768,
+    "mode": "RGB"
+  },
+  "best_guess": {
+    "label": "Golden Retriever",
+    "confidence_pct": "89.4%",
+    "tier": "high"
+  },
+  "top_5": [
+    {"rank": 1, "label": "Golden Retriever", "confidence": 0.8942},
+    {"rank": 2, "label": "Labrador Retriever", "confidence": 0.0521},
+    {"rank": 3, "label": "Cocker Spaniel", "confidence": 0.0145},
+    {"rank": 4, "label": "Kuvasz", "confidence": 0.0083},
+    {"rank": 5, "label": "Tennis Ball", "confidence": 0.0031}
+  ]
+}
+```
+
+---
+
+##  Engineering Journal & Revision Notes
+
+For an in-depth record of each architectural refactor, debugging story, and technical concept learned throughout this project, see [`LEARNING_JOURNAL.md`](LEARNING_JOURNAL.md).
+
+It documents:
+- Eliminating blocking event-loop calls (`asyncio.to_thread` vs synchronous handlers).
+- Migrating from monolithic scripts to modular architecture.
+- Defensive programming against decompression bombs and untrusted uploads.
+- Secure secrets management with decoupled configuration.
+
+---
+
+##  License
+MIT License. Built for learning and portfolio demonstration.
